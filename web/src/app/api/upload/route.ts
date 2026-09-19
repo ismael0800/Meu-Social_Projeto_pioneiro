@@ -1,11 +1,9 @@
 import { NextResponse } from 'next/server';
-import { writeFile } from 'fs/promises';
-import { join } from 'path';
 
 export async function POST(request: Request) {
   try {
     const data = await request.formData();
-    const file = data.get('file');
+    const file = data.get('file') as File;
 
     if (!file) {
       return NextResponse.json({ success: false, message: 'Nenhum arquivo enviado' }, { status: 400 });
@@ -13,14 +11,14 @@ export async function POST(request: Request) {
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
+    
+    // Create a base64 Data URI
+    const mimeType = file.type || 'image/jpeg';
+    const base64Url = `data:${mimeType};base64,${buffer.toString('base64')}`;
 
-    const filename = Date.now() + '-' + file.name.replace(/\s+/g, '_');
-    const filePath = join(process.cwd(), 'public', 'uploads', filename);
-    await writeFile(filePath, buffer);
-
-    return NextResponse.json({ success: true, url: '/uploads/' + filename });
+    return NextResponse.json({ success: true, url: base64Url });
   } catch (error) {
-    console.error('Erro no upload:', error);
+    console.error('Erro no upload base64:', error);
     return NextResponse.json({ success: false, message: 'Erro ao fazer upload' }, { status: 500 });
   }
 }
