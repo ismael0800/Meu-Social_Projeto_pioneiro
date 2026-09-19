@@ -67,7 +67,9 @@ function SolicitacaoMenu() {
     switch(step) {
       case 0: return "Olá! Sou a assistente virtual. Para começar, me diga o número da sua matrícula de água.";
       case 1: return "Perfeito. Agora, por favor, qual é o seu CPF?";
-      case 2: return "Concluindo... Verificando seus dados.";
+      case 2: return "Muito bem. Agora, vou precisar de uma foto do seu documento de identidade ou R G. A câmera vai abrir em instantes, por favor, bata a foto.";
+      case 3: return "Ótimo. Agora tire uma foto do seu comprovante do Cadastro Único ou N I S. A câmera vai abrir novamente.";
+      case 4: return "Pronto! Estou finalizando e enviando a sua solicitação. Aguarde um momento.";
       default: return "";
     }
   };
@@ -149,12 +151,16 @@ function SolicitacaoMenu() {
         const nextStep = voiceStep + 1;
         setVoiceStep(nextStep);
         Speech.speak(getVoicePrompt(nextStep), { language: 'pt-BR', pitch: 1.1, rate: 0.9 });
-      } else {
-        // Terminou
-        Speech.speak(getVoicePrompt(2), { language: 'pt-BR', pitch: 1.1, rate: 0.9 });
-        closeVoiceMode();
-        setFormStep(1); // Vai para o formulário
-        Alert.alert("Sucesso", "Etapas concluídas! Verifique se os dados estão corretos no formulário.");
+      } else if (voiceStep === 1) {
+        // Do CPF vai pra foto do RG
+        const nextStep = 2;
+        setVoiceStep(nextStep);
+        Speech.speak(getVoicePrompt(nextStep), { 
+          language: 'pt-BR', pitch: 1.1, rate: 0.9,
+          onDone: () => {
+            setTimeout(() => openCameraForVoice('rg'), 1500);
+          }
+        });
       }
     } else {
       // Começa a gravar
@@ -167,6 +173,26 @@ function SolicitacaoMenu() {
       } catch (err) {
         Alert.alert("Erro", "Não foi possível iniciar a gravação.");
       }
+    }
+  };
+
+  const openCameraForVoice = async (tipo: 'rg' | 'cadUnico') => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if(!perm.granted) {
+        Alert.alert("Permissão negada", "Precisamos de acesso à câmera");
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({ quality: 0.5, base64: true });
+      if(!result.canceled && result.assets && result.assets.length > 0) {
+         processarUpload(tipo, result.assets[0].uri, result.assets[0].base64);
+      } else {
+        Speech.speak("Você cancelou a foto. A solicitação por voz foi encerrada.", { language: 'pt-BR' });
+        closeVoiceMode();
+      }
+    } catch (e: any) {
+      Alert.alert("Erro", "Não foi possível abrir a câmera.");
+      closeVoiceMode();
     }
   };
 
@@ -268,36 +294,101 @@ function SolicitacaoMenu() {
         return;
       }
 
-      // Sucesso
-      setFormData(prev => ({ 
-        ...prev, 
+      // Sucesso ou Bypass
+      const updates = {
         [tipo === 'rg' ? 'rgEnviado' : 'cadUnicoEnviado']: true,
         [tipo === 'rg' ? 'rgBase64' : 'cadUnicoBase64']: base64 
-      }));
+      };
+      
+      setFormData(prev => ({ ...prev, ...updates }));
       setIsUploading(false);
-      showNotification("Tudo certo!", `O documento (${tipo === 'rg' ? 'Identidade' : 'Benefício'}) foi validado com sucesso pela nossa IA!`, "success");
+
+      if (aiData && aiData.valido) {
+        showNotification("Tudo certo!", `O documento (${tipo === 'rg' ? 'Identidade' : 'Benefício'}) foi validado com sucesso pela nossa IA!`, "success");
+      }
+
+      // Se estiver no modo de acessibilidade por voz, avançar passo
+      if (voiceModalVisible) {
+        if (tipo === 'rg') {
+          setVoiceStep(3);
+          Speech.speak(getVoicePrompt(3), {
+            language: 'pt-BR', pitch: 1.1, rate: 0.9,
+            onDone: () => {
+              setTimeout(() => openCameraForVoice('cadUnico'), 1500);
+            }
+          });
+        } else if (tipo === 'cadUnico') {
+          setVoiceStep(4);
+          Speech.speak(getVoicePrompt(4), {
+            language: 'pt-BR', pitch: 1.1, rate: 0.9,
+            onDone: () => {
+              // Já tem rgBase64 salvo no formData, mas pra garantir enviamos o updates
+              const payload = {
+                matricula: formData.matricula,
+                cpf: formData.cpf,
+                origem: 'APP',
+                documentos: [
+                  { tipo: 'rg', base64: formData.rgBase64 || updates.rgBase64 },
+                  { tipo: 'cadunico', base64: updates.cadUnicoBase64 } // Este acabou de ser feito
+                ]
+              };
+              enviarSolicitacao(payload);
+              closeVoiceMode();
+            }
+          });
+        }
+      }
 
     } catch (e: any) {
       console.warn("API de IA falhou, usando bypass para continuar o fluxo:", e.message);
       
-      // Se for timeout ou sobrecarga, aplicamos o bypass
-      setFormData(prev => ({ 
-        ...prev, 
+      const updates = {
         [tipo === 'rg' ? 'rgEnviado' : 'cadUnicoEnviado']: true,
         [tipo === 'rg' ? 'rgBase64' : 'cadUnicoBase64']: base64 
-      }));
+      };
+      setFormData(prev => ({ ...prev, ...updates }));
       setIsUploading(false);
       
       const isTimeout = e.name === 'AbortError' || (e.message && e.message.includes('AbortError'));
       showNotification("Aviso", isTimeout ? "A IA demorou muito para responder. Vamos aprovar sua foto automaticamente para não travar o teste." : "Os servidores da IA estão sobrecarregados no momento. Vamos aprovar sua foto automaticamente para não travar seu teste.", "warning");
+
+      if (voiceModalVisible) {
+        if (tipo === 'rg') {
+          setVoiceStep(3);
+          Speech.speak(getVoicePrompt(3), {
+            language: 'pt-BR', pitch: 1.1, rate: 0.9,
+            onDone: () => {
+              setTimeout(() => openCameraForVoice('cadUnico'), 1500);
+            }
+          });
+        } else if (tipo === 'cadUnico') {
+          setVoiceStep(4);
+          Speech.speak(getVoicePrompt(4), {
+            language: 'pt-BR', pitch: 1.1, rate: 0.9,
+            onDone: () => {
+              const payload = {
+                matricula: formData.matricula,
+                cpf: formData.cpf,
+                origem: 'APP',
+                documentos: [
+                  { tipo: 'rg', base64: formData.rgBase64 || updates.rgBase64 },
+                  { tipo: 'cadunico', base64: updates.cadUnicoBase64 }
+                ]
+              };
+              enviarSolicitacao(payload);
+              closeVoiceMode();
+            }
+          });
+        }
+      }
     }
   };
 
-  const enviarSolicitacao = async () => {
+  const enviarSolicitacao = async (payloadOverride?: any) => {
     try {
       Alert.alert("Aguarde...", "Preparando sua solicitação...");
       
-      const payload = {
+      const payload = payloadOverride || {
         matricula: formData.matricula,
         cpf: formData.cpf,
         origem: 'APP',
@@ -639,12 +730,14 @@ function SolicitacaoMenu() {
           <Text style={styles.voicePromptText}>{getVoicePrompt(voiceStep)}</Text>
 
           <Text style={styles.voiceInstructionText}>
-            (O aplicativo está falando as instruções em áudio e ouvindo a sua resposta pelo microfone...)
+            {voiceStep >= 2 
+              ? "(Aguardando você tirar a foto do documento...)"
+              : "(O aplicativo está falando as instruções em áudio e ouvindo a sua resposta pelo microfone...)"}
           </Text>
 
           {isProcessingAudio ? (
             <ActivityIndicator size="large" color="#FFF" style={{marginTop: 20}} />
-          ) : (
+          ) : voiceStep < 2 ? (
             <TouchableOpacity 
               style={[styles.mockVoiceBtn, isRecording && { backgroundColor: '#EF4444' }]} 
               onPress={toggleRecording}
@@ -653,7 +746,7 @@ function SolicitacaoMenu() {
                 {isRecording ? "[ PARAR DE FALAR ]" : "[ RESPONDER FALANDO ]"}
               </Text>
             </TouchableOpacity>
-          )}
+          ) : null}
 
         </View>
       </Modal>
