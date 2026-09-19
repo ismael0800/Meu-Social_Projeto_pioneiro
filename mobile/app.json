@@ -23,13 +23,22 @@
         "backgroundColor": "#580F53"
       },
       "package": "com.pioneiros.tarifasocial",
-      "permissions": ["android.permission.DETECT_SCREEN_CAPTURE"]
+      "permissions": [
+        "android.permission.DETECT_SCREEN_CAPTURE",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-camera"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "6bbe4278-a235-4ebc-a663-d38b1e7e193e"
+      }
+    }
   }
 }
