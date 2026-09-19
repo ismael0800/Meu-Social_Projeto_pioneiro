@@ -315,14 +315,24 @@ export default function QRCodesPage() {
                         >
                           <ExternalLink size={16} />
                         </a>
-                        <button 
-                          onClick={() => handleToggleStatus(qr.id, qr.status)}
-                          disabled={!currentUser || currentUser.cargo !== 'Chefe'}
-                          className={`p-1.5 rounded-lg transition-colors ${!currentUser || currentUser.cargo !== 'Chefe' ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-200'}`}
-                          title={currentUser?.cargo === 'Chefe' ? "Alterar Status" : "Apenas chefes podem alterar o status"}
-                        >
-                          <Ban size={16} className="text-slate-400 hover:text-red-500" />
-                        </button>
+                        {qr.titulo !== 'Apresentação pioneiros' ? (
+                          <button 
+                            onClick={() => handleToggleStatus(qr.id, qr.status)}
+                            disabled={!currentUser || currentUser.cargo !== 'Chefe'}
+                            className={`p-1.5 rounded-lg transition-colors ${!currentUser || currentUser.cargo !== 'Chefe' ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-200'}`}
+                            title={currentUser?.cargo === 'Chefe' ? "Alterar Status" : "Apenas chefes podem alterar o status"}
+                          >
+                            <Ban size={16} className="text-slate-400 hover:text-red-500" />
+                          </button>
+                        ) : (
+                          <button 
+                            disabled
+                            className="p-1.5 rounded-lg opacity-30 cursor-not-allowed"
+                            title="Esta campanha oficial não pode ser desativada!"
+                          >
+                            <Ban size={16} className="text-slate-400" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
