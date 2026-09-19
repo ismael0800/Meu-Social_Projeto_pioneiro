@@ -14,8 +14,13 @@ export async function POST(request: Request) {
       });
     }
 
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY não configurada no servidor Vercel.");
+    }
+
     const model = 'gemini-1.5-flash';
     
+    // Configuração do prompt para extrair os 3 dados (Nome, CPF, Matrícula) do áudio
     const prompt = `Você é um assistente de acessibilidade para solicitação da Tarifa Social de Água.
 Abaixo está o áudio de um cidadão tentando fazer a solicitação.
 Extraia os seguintes dados se estiverem presentes no áudio:

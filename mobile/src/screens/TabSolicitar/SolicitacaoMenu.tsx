@@ -65,8 +65,9 @@ function SolicitacaoMenu() {
 
   const getVoicePrompt = (step: number) => {
     switch(step) {
-      case 0: return "Olá! Sou a assistente virtual. Para começar, por favor, me fale o seu nome completo, CPF e o número da matrícula da sua conta de água.";
-      case 1: return "Estou enviando o áudio para análise da inteligência artificial. Aguarde um instante...";
+      case 0: return "Olá! Sou a assistente virtual. Para começar, me diga o número da sua matrícula de água.";
+      case 1: return "Perfeito. Agora, por favor, qual é o seu CPF?";
+      case 2: return "Concluindo... Verificando seus dados.";
       default: return "";
     }
   };
@@ -86,11 +87,13 @@ function SolicitacaoMenu() {
     }
   };
 
-  const closeVoiceMode = () => {
+  const closeVoiceMode = async () => {
     Speech.stop();
     setVoiceModalVisible(false);
     if (recording) {
-      recording.stopAndUnloadAsync();
+      try {
+        await recording.stopAndUnloadAsync();
+      } catch(e) {}
       setRecording(null);
     }
     setIsRecording(false);
@@ -102,15 +105,19 @@ function SolicitacaoMenu() {
       // Para de gravar e processa
       setIsRecording(false);
       setIsProcessingAudio(true);
-      setVoiceStep(1);
-      Speech.speak(getVoicePrompt(1), { language: 'pt-BR', pitch: 1.1, rate: 0.9 });
       
+      let uri = null;
       try {
-        if (!recording) return;
-        await recording.stopAndUnloadAsync();
-        const uri = recording.getURI();
+        if (recording) {
+          await recording.stopAndUnloadAsync();
+          uri = recording.getURI();
+          setRecording(null);
+        }
+      } catch (err) {
         setRecording(null);
+      }
         
+      try {
         if (uri) {
           let base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
           
@@ -121,40 +128,44 @@ function SolicitacaoMenu() {
           });
           const aiData = await aiRes.json();
           
-          setIsProcessingAudio(false);
-          closeVoiceMode();
-          
           if (aiData.success && aiData.dados) {
             setFormData(prev => ({
               ...prev,
               cpf: aiData.dados.cpf || prev.cpf,
               matricula: aiData.dados.matricula || prev.matricula
             }));
-            
-            Alert.alert(
-              "Dados Preenchidos!", 
-              `A IA ouviu e preencheu:\nCPF: ${aiData.dados.cpf || 'Não identificado'}\nMatrícula: ${aiData.dados.matricula || 'Não identificado'}`
-            );
-            
-            setFormStep(1); // Vai para o formulário ver os dados preenchidos
           } else {
-            Alert.alert("Aviso", "A IA não conseguiu identificar os dados no áudio. Tente novamente.");
+            Alert.alert("Aviso", "A IA não conseguiu identificar os dados claramente, mas vamos continuar.");
           }
         }
       } catch (err) {
-        setIsProcessingAudio(false);
+        console.warn("Falha no áudio:", err);
+      }
+
+      setIsProcessingAudio(false);
+
+      if (voiceStep < 1) {
+        // Vai pro próximo passo (Matrícula -> CPF)
+        const nextStep = voiceStep + 1;
+        setVoiceStep(nextStep);
+        Speech.speak(getVoicePrompt(nextStep), { language: 'pt-BR', pitch: 1.1, rate: 0.9 });
+      } else {
+        // Terminou
+        Speech.speak(getVoicePrompt(2), { language: 'pt-BR', pitch: 1.1, rate: 0.9 });
         closeVoiceMode();
-        Alert.alert("Erro", "Falha ao processar o áudio.");
+        setFormStep(1); // Vai para o formulário
+        Alert.alert("Sucesso", "Etapas concluídas! Verifique se os dados estão corretos no formulário.");
       }
     } else {
-      // Inicia a gravação
+      // Começa a gravar
       try {
-        await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-        const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-        setRecording(recording);
+        const { recording: newRecording } = await Audio.Recording.createAsync(
+          Audio.RecordingOptionsPresets.HIGH_QUALITY
+        );
+        setRecording(newRecording);
         setIsRecording(true);
       } catch (err) {
-        Alert.alert('Erro', 'Falha ao iniciar gravação.');
+        Alert.alert("Erro", "Não foi possível iniciar a gravação.");
       }
     }
   };

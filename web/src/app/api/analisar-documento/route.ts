@@ -15,8 +15,12 @@ export async function POST(request: Request) {
       });
     }
 
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY não configurada no servidor Vercel.");
+    }
+
     // O modelo adequado para imagens e texto
-    const model = 'gemini-3.6-flash';
+    const model = 'gemini-1.5-flash';
 
     let prompt = '';
     if (tipo === 'rg') {
