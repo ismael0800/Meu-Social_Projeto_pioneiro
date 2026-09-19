@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Usuario {
+  id        String   @id @default(cuid())
+  nome      String
+  email     String   @unique
+  senha     String
+  cargo     String   @default("Funcionario") // Funcionario, Chefe
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now())
+}
+
+model Beneficiario {
+  id           String        @id @default(cuid())
+  nome         String
+  cpf          String        @unique
+  senha        String        @default("123")
+  matricula    String?
+  endereco     String?
+  cidade       String?
+  bairro       String?
+  cep          String?
+  telefone     String?
+  solicitacoes Solicitacao[]
+  criadoEm     DateTime      @default(now())
+}
+
+model Solicitacao {
+  id               String         @id @default(cuid())
+  beneficiarioId   String
+  beneficiario     Beneficiario   @relation(fields: [beneficiarioId], references: [id])
+  status           String         @default("Pendente") // Pendente, Em Anǭlise, Aprovada, Recusada
+  funcionario      String?        // Nome do auditor que assumiu
+  origem           String         @default("APP") // APP, QR_CODE, OFFLINE
+  campanhaId       String?        // ID da Campanha QR associada, se houver
+  assinaturaValida Boolean        @default(false)
+  documentos       Documento[]
+  historico        HistoricoLog[]
+  dataCriacao      DateTime       @default(now())
+  dataAtualizacao  DateTime       @updatedAt
+  dataEncerramento DateTime?
+}
+
+model Documento {
+  id            String      @id @default(cuid())
+  solicitacaoId String
+  solicitacao   Solicitacao @relation(fields: [solicitacaoId], references: [id])
+  tipo          String      // rg, cadUnico, fatura
+  descricao     String?
+  url           String      // Caminho local do arquivo (/uploads/...)
+  status        String      @default("Pendente") // Pendente, Aprovado, Recusado
+  criadoEm      DateTime    @default(now())
+}
+
+model HistoricoLog {
+  id            String      @id @default(cuid())
+  solicitacaoId String
+  solicitacao   Solicitacao @relation(fields: [solicitacaoId], references: [id])
+  acao          String
+  usuario       String      @default("Sistema")
+  dataHora      DateTime    @default(now())
+}
+
+
+model CampanhaQr {
+  id          String   @id @default(cuid())
+  codigo      String   @unique
+  titulo      String
+  descricao   String?
+  municipio   String
+  bairro      String
+  validade    DateTime
+  status      String   @default("Ativo")
+  funcionario String
+  criadoEm    DateTime @default(now())
+}

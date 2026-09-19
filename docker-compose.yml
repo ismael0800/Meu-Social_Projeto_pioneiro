@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: tarifa_db
+    environment:
+      POSTGRES_USER: tarifa_user
+      POSTGRES_PASSWORD: tarifa_password
+      POSTGRES_DB: tarifa_social
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - tarifa_network
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tarifa_api
+    depends_on:
+      - db
+    ports:
+      - "3001:3001"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=tarifa_user
+      - DB_PASS=tarifa_password
+      - DB_NAME=tarifa_social
+      - PORT=3001
+    networks:
+      - tarifa_network
+
+  # Web can be run locally or via docker, usually for dev we run local
+  # but here is the definition if needed.
+  # web:
+  #   build:
+  #     context: ./web
+  #     dockerfile: Dockerfile
+  #   container_name: tarifa_web
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - NEXT_PUBLIC_API_URL=http://localhost:3001
+  #   networks:
+  #     - tarifa_network
+
+networks:
+  tarifa_network:
+    driver: bridge
+
+volumes:
+  pgdata:
