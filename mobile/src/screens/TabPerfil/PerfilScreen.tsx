@@ -8,7 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { colors } from '../../theme/colors';
 
-const API_BASE_URL = Platform.OS === 'web' ? 'http://localhost:3000/api' : 'http://192.168.21.93:3000/api';
+import { API_BASE_URL } from '../../config/api';
 
 function PerfilScreen() {
   let content;
@@ -72,18 +72,39 @@ function PerfilScreen() {
           reader.readAsDataURL(blob);
         });
       } else {
-        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if(!perm.granted) {
-           showNotification("Permissão negada", "Precisamos de acesso para ler a fatura.", "error");
-           return;
-        }
-        const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.5, base64: true });
-        if(result.canceled || !result.assets) return;
-        uri = result.assets[0].uri;
-        base64 = result.assets[0].base64 || await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+        Alert.alert("Como deseja escanear a fatura?", "Escolha a origem da imagem:", [
+          { text: "Tirar Foto (Câmera)", onPress: async () => {
+              const perm = await ImagePicker.requestCameraPermissionsAsync();
+              if(!perm.granted) {
+                 showNotification("Permissão negada", "Precisamos da câmera para ler a fatura.", "error");
+                 return;
+              }
+              const result = await ImagePicker.launchCameraAsync({ quality: 0.5, base64: true });
+              if(!result.canceled && result.assets) processarBase64(result.assets[0].uri, result.assets[0].base64);
+          }},
+          { text: "Procurar nos Arquivos/Galeria", onPress: async () => {
+              const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+              if(!perm.granted) {
+                 showNotification("Permissão negada", "Precisamos da galeria para ler a fatura.", "error");
+                 return;
+              }
+              const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.5, base64: true });
+              if(!result.canceled && result.assets) processarBase64(result.assets[0].uri, result.assets[0].base64);
+          }},
+          { text: "Cancelar", style: "cancel" }
+        ]);
+        return; // Retorna para não continuar o fluxo principal, quem continua é o callback do Alert
       }
+    } catch(e) {}
+  };
 
+  const processarBase64 = async (uri: string, b64?: string | null) => {
+    try {
       setIsLoading(true);
+      let base64 = b64;
+      if (!base64 && Platform.OS !== 'web') {
+         base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+      }
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 12000); // 12 segundos de timeout

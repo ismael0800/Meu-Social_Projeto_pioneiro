@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Tarifa Social Conectada",
+    "name": "Meu social+",
     "slug": "tarifa-social-conectada",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -19,7 +19,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/icon.jpg",
         "backgroundColor": "#580F53"
       },
       "package": "com.pioneiros.tarifasocial",

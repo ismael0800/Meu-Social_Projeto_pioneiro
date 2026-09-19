@@ -1,1 +1,1 @@
-export const API_BASE_URL = 'http://192.168.0.129:3000/api';
+export const API_BASE_URL = 'https://meu-social-projeto-pioneiro-n76z-pearl.vercel.app/api';

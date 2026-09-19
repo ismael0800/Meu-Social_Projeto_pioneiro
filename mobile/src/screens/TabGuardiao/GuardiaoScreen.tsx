@@ -8,7 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { colors } from '../../theme/colors';
 
-const API_BASE_URL = Platform.OS === 'web' ? 'http://localhost:3000/api' : 'http://192.168.21.93:3000/api';
+import { API_BASE_URL } from '../../config/api';
 
 type Fatura = {
   id: string;
@@ -128,15 +128,34 @@ function GuardiaoScreen() {
   // ==========================================
 
   const handleScanFatura = async () => {
-    let uri = '';
-    let base64 = '';
-    
     if (Platform.OS === 'web') {
       try {
         const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.5, base64: true });
         if(result.canceled || !result.assets) return;
-        uri = result.assets[0].uri;
-        
+        processarImagemFatura(result.assets[0].uri, result.assets[0].base64);
+      } catch(e) { return showNotification("Erro", "Erro ao abrir arquivo", "error"); }
+    } else {
+      Alert.alert("Escanear Fatura", "Escolha a origem da imagem:", [
+        { text: "Tirar Foto (Câmera)", onPress: async () => {
+            const perm = await ImagePicker.requestCameraPermissionsAsync();
+            if(!perm.granted) return showNotification('Permissão Recusada', 'Você precisa permitir o acesso à câmera.', 'error');
+            const result = await ImagePicker.launchCameraAsync({ quality: 0.5, base64: true });
+            if(!result.canceled && result.assets) processarImagemFatura(result.assets[0].uri, result.assets[0].base64);
+        }},
+        { text: "Procurar nos Arquivos/Galeria", onPress: async () => {
+            const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if(!perm.granted) return showNotification('Permissão Recusada', 'Você precisa permitir acesso à galeria.', 'error');
+            const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.5, base64: true });
+            if(!result.canceled && result.assets) processarImagemFatura(result.assets[0].uri, result.assets[0].base64);
+        }},
+        { text: "Cancelar", style: "cancel" }
+      ]);
+    }
+  };
+
+  const processarImagemFatura = async (uri: string, base64Param?: string | null) => {
+    let base64 = base64Param || '';
+    if (Platform.OS === 'web' && !base64) {
         const res = await fetch(uri);
         const blob = await res.blob();
         base64 = await new Promise((resolve, reject) => {
@@ -145,17 +164,6 @@ function GuardiaoScreen() {
           reader.onerror = reject;
           reader.readAsDataURL(blob);
         });
-      } catch(e) { return showNotification("Erro", "Erro ao abrir arquivo", "error"); }
-    } else {
-      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-      if (permissionResult.granted === false) {
-        showNotification('Permissão Recusada', 'Você precisa permitir o acesso à câmera para escanear faturas.', 'error');
-        return;
-      }
-      const result = await ImagePicker.launchCameraAsync({ quality: 0.5, base64: true });
-      if (result.canceled || !result.assets) return;
-      uri = result.assets[0].uri;
-      base64 = result.assets[0].base64 || '';
     }
 
     setIsScanning(true);

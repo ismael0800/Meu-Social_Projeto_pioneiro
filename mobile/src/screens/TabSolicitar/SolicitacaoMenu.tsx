@@ -8,14 +8,20 @@ import { colors } from '../../theme/colors';
 import * as Speech from 'expo-speech';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
+import { Audio } from 'expo-av';
+import NetInfo from '@react-native-community/netinfo';
+import { enqueueRequest } from '../../services/SyncService';
 
-const API_BASE_URL = Platform.OS === 'web' ? 'http://localhost:3000/api' : 'http://192.168.21.93:3000/api';
+import { API_BASE_URL } from '../../config/api';
 
 function SolicitacaoMenu() {
   // Estado para o Assistente de Voz
   const [voiceModalVisible, setVoiceModalVisible] = useState(false);
   const [voiceStep, setVoiceStep] = useState(0);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isProcessingAudio, setIsProcessingAudio] = useState(false);
 
   // Estados do Formulário Padrão
   const [formStep, setFormStep] = useState(0); // 0 = Menu, 1+ = Formulário
@@ -59,35 +65,97 @@ function SolicitacaoMenu() {
 
   const getVoicePrompt = (step: number) => {
     switch(step) {
-      case 0: return "Olá! Sou a assistente virtual. Para começar, por favor, me fale os números do seu CPF.";
-      case 1: return "Certo. Agora me diga o número da matrícula da sua conta de água.";
-      case 2: return "Perfeito. Você tem o cartão do Bolsa Família, Cadastro Único ou benefício B P C?";
-      case 3: return "Tudo anotado! Confirmando, deseja enviar a sua solicitação agora mesmo?";
+      case 0: return "Olá! Sou a assistente virtual. Para começar, por favor, me fale o seu nome completo, CPF e o número da matrícula da sua conta de água.";
+      case 1: return "Estou enviando o áudio para análise da inteligência artificial. Aguarde um instante...";
       default: return "";
     }
   };
 
-  const startVoiceMode = () => {
-    setVoiceStep(0);
-    setVoiceModalVisible(true);
-    const text = getVoicePrompt(0);
-    Speech.speak(text, { language: 'pt-BR', pitch: 1.1, rate: 0.9 });
+  const startVoiceMode = async () => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert('Permissão', 'Precisamos do microfone para a acessibilidade por voz.');
+        return;
+      }
+      setVoiceStep(0);
+      setVoiceModalVisible(true);
+      Speech.speak(getVoicePrompt(0), { language: 'pt-BR', pitch: 1.1, rate: 0.9 });
+    } catch (err) {
+      console.warn(err);
+    }
   };
 
   const closeVoiceMode = () => {
     Speech.stop();
     setVoiceModalVisible(false);
+    if (recording) {
+      recording.stopAndUnloadAsync();
+      setRecording(null);
+    }
+    setIsRecording(false);
   };
 
-  const simulateVoiceResponse = () => {
+  const toggleRecording = async () => {
     Speech.stop();
-    let next = voiceStep + 1;
-    if (next <= 3) {
-      setVoiceStep(next);
-      Speech.speak(getVoicePrompt(next), { language: 'pt-BR', pitch: 1.1, rate: 0.9 });
+    if (isRecording) {
+      // Para de gravar e processa
+      setIsRecording(false);
+      setIsProcessingAudio(true);
+      setVoiceStep(1);
+      Speech.speak(getVoicePrompt(1), { language: 'pt-BR', pitch: 1.1, rate: 0.9 });
+      
+      try {
+        if (!recording) return;
+        await recording.stopAndUnloadAsync();
+        const uri = recording.getURI();
+        setRecording(null);
+        
+        if (uri) {
+          let base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+          
+          const aiRes = await fetch(`${API_BASE_URL}/analisar-audio`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audioBase64: base64 })
+          });
+          const aiData = await aiRes.json();
+          
+          setIsProcessingAudio(false);
+          closeVoiceMode();
+          
+          if (aiData.success && aiData.dados) {
+            setFormData(prev => ({
+              ...prev,
+              cpf: aiData.dados.cpf || prev.cpf,
+              matricula: aiData.dados.matricula || prev.matricula
+            }));
+            
+            Alert.alert(
+              "Dados Preenchidos!", 
+              `A IA ouviu e preencheu:\nCPF: ${aiData.dados.cpf || 'Não identificado'}\nMatrícula: ${aiData.dados.matricula || 'Não identificado'}`
+            );
+            
+            setFormStep(1); // Vai para o formulário ver os dados preenchidos
+          } else {
+            Alert.alert("Aviso", "A IA não conseguiu identificar os dados no áudio. Tente novamente.");
+          }
+        }
+      } catch (err) {
+        setIsProcessingAudio(false);
+        closeVoiceMode();
+        Alert.alert("Erro", "Falha ao processar o áudio.");
+      }
     } else {
-      closeVoiceMode();
-      Alert.alert("Voz Processada!", "Sua solicitação via voz foi transcrita e enviada com sucesso para análise.");
+      // Inicia a gravação
+      try {
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+        const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+        setRecording(recording);
+        setIsRecording(true);
+      } catch (err) {
+        Alert.alert('Erro', 'Falha ao iniciar gravação.');
+      }
     }
   };
 
@@ -216,18 +284,25 @@ function SolicitacaoMenu() {
 
   const enviarSolicitacao = async () => {
     try {
-      Alert.alert("Aguarde...", "Enviando sua solicitação para análise da equipe...");
+      Alert.alert("Aguarde...", "Preparando sua solicitação...");
       
       const payload = {
         matricula: formData.matricula,
         cpf: formData.cpf,
         origem: 'APP',
-        // enviamos documentos dummy ou base64 aqui
         documentos: [
-          { tipo: 'rg', url: '/uploads/app_rg.jpg' },
-          { tipo: 'cadunico', url: '/uploads/app_cadunico.jpg' }
+          { tipo: 'rg', base64: formData.rgBase64 },
+          { tipo: 'cadunico', base64: formData.cadUnicoBase64 }
         ]
       };
+
+      const netState = await NetInfo.fetch();
+      if (!netState.isConnected || !netState.isInternetReachable) {
+        await enqueueRequest(payload);
+        setFormStep(0);
+        setFormData({ matricula: '12345678-9', cpf: '111.222.333-44', rgEnviado: false, cadUnicoEnviado: false, rgBase64: '', cadUnicoBase64: '', salvarDocs: false, assinatura: false });
+        return;
+      }
 
       const res = await fetch(`${API_BASE_URL}/solicitacoes`, {
         method: 'POST',
@@ -244,7 +319,10 @@ function SolicitacaoMenu() {
         Alert.alert("Erro", "Falha ao enviar a solicitação.");
       }
     } catch(e) {
-      Alert.alert("Erro de Conexão", "Não foi possível comunicar com o servidor. Você está offline?");
+      // Fallback para fila offline se o fetch falhar
+      await enqueueRequest({ matricula: formData.matricula, cpf: formData.cpf, origem: 'APP' });
+      setFormStep(0);
+      setFormData({ matricula: '12345678-9', cpf: '111.222.333-44', rgEnviado: false, cadUnicoEnviado: false, rgBase64: '', cadUnicoBase64: '', salvarDocs: false, assinatura: false });
     }
   };
 
@@ -553,10 +631,18 @@ function SolicitacaoMenu() {
             (O aplicativo está falando as instruções em áudio e ouvindo a sua resposta pelo microfone...)
           </Text>
 
-          {/* Botão temporário apenas para o mock avançar as etapas */}
-          <TouchableOpacity style={styles.mockVoiceBtn} onPress={simulateVoiceResponse}>
-            <Text style={styles.mockVoiceBtnText}>[ SIMULAR RESPOSTA FALADA ]</Text>
-          </TouchableOpacity>
+          {isProcessingAudio ? (
+            <ActivityIndicator size="large" color="#FFF" style={{marginTop: 20}} />
+          ) : (
+            <TouchableOpacity 
+              style={[styles.mockVoiceBtn, isRecording && { backgroundColor: '#EF4444' }]} 
+              onPress={toggleRecording}
+            >
+              <Text style={styles.mockVoiceBtnText}>
+                {isRecording ? "[ PARAR DE FALAR ]" : "[ RESPONDER FALANDO ]"}
+              </Text>
+            </TouchableOpacity>
+          )}
 
         </View>
       </Modal>
