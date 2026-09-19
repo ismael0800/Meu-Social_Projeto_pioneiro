@@ -7,16 +7,17 @@ const prisma = new PrismaClient();
 
 export async function getBeneficiariosData() {
   noStore();
-  const beneficiarios = await prisma.beneficiario.findMany({
-    include: {
-      solicitacoes: {
-        include: { historico: { orderBy: { dataHora: 'asc' } } },
-        orderBy: { dataCriacao: 'desc' },
-        take: 1
-      }
-    },
-    orderBy: { criadoEm: 'desc' }
-  });
+  try {
+    const beneficiarios = await prisma.beneficiario.findMany({
+      include: {
+        solicitacoes: {
+          include: { historico: { orderBy: { dataHora: 'asc' } } },
+          orderBy: { dataCriacao: 'desc' },
+          take: 1
+        }
+      },
+      orderBy: { criadoEm: 'desc' }
+    });
 
   return beneficiarios.map(b => {
     const lastSol = b.solicitacoes[0];
@@ -43,14 +44,18 @@ export async function getBeneficiariosData() {
       })) || []
     };
   });
+  } catch (error) {
+    console.error("ERRO GRAVE NO BANCO DE DADOS (getBeneficiariosData):", error);
+    return [];
+  }
 }
-
 export async function getDashboardStats() {
   noStore();
-  const solicitacoes = await prisma.solicitacao.findMany({
-    include: { beneficiario: true },
-    orderBy: { dataCriacao: 'asc' }
-  });
+  try {
+    const solicitacoes = await prisma.solicitacao.findMany({
+      include: { beneficiario: true },
+      orderBy: { dataCriacao: 'asc' }
+    });
 
   const total = solicitacoes.length;
   const pendentes = solicitacoes.filter(s => s.status === 'Pendente' || s.status === 'Em Análise').length;
@@ -94,5 +99,9 @@ export async function getDashboardStats() {
     { name: 'Agentes (Offline)', value: solicitacoes.filter(s => s.origem === 'OFFLINE').length }
   ].filter(p => p.value > 0);
 
-  return { total, pendentes, aprovadas, recusadas, evolution, rankingBairros, perfilMoradia, solicitacoes };
+    return { total, pendentes, aprovadas, recusadas, evolution, rankingBairros, perfilMoradia, solicitacoes };
+  } catch (error) {
+    console.error("ERRO GRAVE NO BANCO DE DADOS (getDashboardStats):", error);
+    return null;
+  }
 }

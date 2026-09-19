@@ -5,16 +5,17 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 export async function getSolicitacoesList() {
-  const solicitacoes = await prisma.solicitacao.findMany({
-    include: {
-      beneficiario: true,
-      historico: {
-        orderBy: { dataHora: 'desc' },
-        take: 1
-      }
-    },
-    orderBy: { dataCriacao: 'desc' }
-  });
+  try {
+    const solicitacoes = await prisma.solicitacao.findMany({
+      include: {
+        beneficiario: true,
+        historico: {
+          orderBy: { dataHora: 'desc' },
+          take: 1
+        }
+      },
+      orderBy: { dataCriacao: 'desc' }
+    });
 
   return solicitacoes.map(s => {
     let dataEncerramento = null;
@@ -36,4 +37,8 @@ export async function getSolicitacoesList() {
       funcionario: 'Sistema (Auto)' // No mock users assigned yet
     };
   });
+  } catch (error) {
+    console.error("ERRO GRAVE NO BANCO DE DADOS (getSolicitacoesList):", error);
+    return [];
+  }
 }
